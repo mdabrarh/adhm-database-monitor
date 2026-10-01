@@ -1,0 +1,25 @@
+[Unit]
+Description=Agentic Database Health Monitor (locks, deadlocks, undo pressure)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dbmonitor
+Group=dbmonitor
+WorkingDirectory=/opt/db-agentic-monitor
+EnvironmentFile=/opt/db-agentic-monitor/.env
+ExecStart=/opt/db-agentic-monitor/venv/bin/python -m agent.monitor_agent
+Restart=always
+RestartSec=10
+# Journald captures stdout/stderr -- view with: journalctl -u db-monitor-agent -f
+StandardOutput=journal
+StandardError=journal
+
+# Light sandboxing -- tighten further as your org's policy requires.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

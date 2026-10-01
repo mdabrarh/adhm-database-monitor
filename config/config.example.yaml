@@ -1,0 +1,59 @@
+# Copy to config/config.yaml and edit for your environment.
+# Secrets are never written here directly -- reference an env var name
+# (defined in .env) using the {env: VAR_NAME} form, as shown below.
+
+poll_interval_seconds: 60      # how often the cheap pre-filter checks every instance
+anthropic_model: "claude-sonnet-5"
+max_agent_turns: 6             # cap on how many tool calls the agent can make per verdict
+log_level: "INFO"
+
+baseline_db_path: "data/baseline.sqlite3"
+decisions_log_path: "data/decisions.jsonl"   # currently informational; decisions live in the sqlite db
+
+instances:
+  - name: "orders-prod-pg"          # friendly label -- used as the baseline/history key, shown in alerts
+    engine: "postgres"
+    host: "orders-prod.xxxxxxxx.us-east-1.rds.amazonaws.com"
+    port: 5432
+    database: "orders"
+    user: "db_monitor_ro"
+    password: { env: "ORDERS_PG_PASSWORD" }
+    # Optional. Only set this if the monitor runs on the DB host itself (or
+    # the log is mounted here) -- lets deadlock emails include the actual
+    # participant queries from the Postgres log, not just the bare counter.
+    # Leave unset for RDS/managed Postgres. See README "Known limitations".
+    # postgres_log_path: "/var/log/postgresql/postgresql.log"
+
+  - name: "billing-prod-mysql"
+    engine: "mysql"
+    host: "billing-prod.xxxxxxxx.us-east-1.rds.amazonaws.com"
+    port: 3306
+    database: "billing"
+    user: "db_monitor_ro"
+    password: { env: "BILLING_MYSQL_PASSWORD" }
+
+# Add as many more instances as you like, mixing postgres and mysql freely --
+# nothing else in the codebase needs to change.
+
+prefilter:
+  # Cheap, non-LLM thresholds. Lower = escalate to Claude more often (safer,
+  # more API spend). See agent/quick_probe.py for how these are used.
+  max_blocking_wait_seconds: 15
+  undo_pressure_ratio: 0.4
+  deadlock_delta_min: 1
+  long_txn_age_seconds: 120
+  # Sessions open longer than this get a ready-to-copy termination command
+  # included in the notification email. Nothing is ever auto-killed --
+  # see common/kill_commands.py and README "Safety model".
+  kill_suggestion_age_seconds: 600   # 10 minutes
+
+notify:
+  min_tier: "low"          # "low" = email on low+high verdicts; "high" = only page-worthy verdicts
+  smtp_host: "smtp.gmail.com"
+  smtp_port: 587
+  smtp_user: { env: "SMTP_USER" }
+  smtp_password: { env: "SMTP_PASSWORD" }
+  email_from: "alerts@yourcompany.com"
+  email_to:
+    - "you@yourcompany.com"
+  use_tls: true
