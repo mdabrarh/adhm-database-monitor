@@ -151,8 +151,10 @@ def get_full_snapshot(conn) -> dict[str, Any]:
     blocking = get_blocking_chains(conn)
     undo = get_undo_pressure(conn)
     long_txns = get_long_transactions(conn, min_age_seconds=10.0)
-    max_wait = max([b["blocked_wait_seconds"] or 0 for b in blocking], default=0.0)
-    max_txn_age = max([t["txn_age_seconds"] or 0 for t in long_txns], default=0.0)
+    # float(): PostgreSQL 14+ returns EXTRACT(EPOCH ...) as numeric -> Decimal,
+    # which json.dumps (record_decision) and record_snapshot cannot handle.
+    max_wait = float(max([b["blocked_wait_seconds"] or 0 for b in blocking], default=0.0))
+    max_txn_age = float(max([t["txn_age_seconds"] or 0 for t in long_txns], default=0.0))
     return {
         "engine": "mysql",
         "timestamp": time.time(),

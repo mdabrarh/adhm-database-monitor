@@ -58,7 +58,8 @@ agent/              prompts.py (what Claude is told), claude_client.py
                     (SDK wrapper), notifier.py (email), quick_probe.py
                     (the cheap filter), monitor_agent.py (the main loop)
 scripts/            mark_feedback.py -- CLI to mark a past verdict as a
-                    true/false positive
+                    true/false positive; run_paper_experiments.py and
+                    scenarios/ -- reproduce the paper's evaluation
 deploy/             systemd unit, install script, EC2 setup walkthrough
 config/             config.example.yaml -- copy to config.yaml and edit
 ```
@@ -182,6 +183,85 @@ This was built to be edited, not just run. Some likely next steps:
   this as a deliberate, reviewed change, not a config flag flipped in
   passing — it's the one place this system can affect production, not just
   observe it.
+
+## Reproducing the paper's evaluation
+
+`scripts/run_paper_experiments.py` reproduces the proof-of-concept
+evaluation in the accompanying paper (*An Agentic AI Framework for Database
+Health Monitoring Across Engines: Reasoning Beyond Static Thresholds*). It
+only observes the monitor: nothing in `agent/` or `common/` is changed for
+the experiment. **Use non-production databases only.**
+
+| Stage | Cycle | Scenario | What runs |
+|---|---|---|---|
+| 1 | – | PostgreSQL blocking chain | Evidence path + rendered email, LLM fields held out (no API call) |
+| 1 | – | MySQL deadlock | Evidence path only (no API call) |
+| 2 | 1 | PostgreSQL blocking chain (active) | Full `handle_candidate()` with live MCP tools |
+| 2 | 2 | PostgreSQL quiescent | Full `handle_candidate()` |
+| 2 | 3 | MySQL deadlock (just occurred) | Full `handle_candidate()` |
+| 2 | 4 | MySQL quiescent | Full `handle_candidate()` |
+
+Scenarios (`scripts/scenarios/`):
+
+- `pg_blocking_chain.py` -- session A takes a row lock with
+  `SELECT ... FOR UPDATE` and sits idle in its transaction; session B's
+  `UPDATE` on the same row blocks behind it.
+- `mysql_deadlock.py` -- two sessions update `invoices` rows 1 and 2 in
+  opposite order; InnoDB detects the cycle and rolls one back.
+
+Both scenarios roll back everything they do, leaving the test tables unchanged.
+
+### Steps
+
+1. Start PostgreSQL and MySQL test instances. The paper used PostgreSQL 16
+   and MySQL 8.4.
+2. Create the test tables with a user that can write:
+   ```bash
+   psql  -h localhost -U <writer> -d <db> -f scripts/scenarios/setup_postgres.sql
+   mysql -h 127.0.0.1 -u <writer> -p <db> < scripts/scenarios/setup_mysql.sql
+   ```
+   Keep the PostgreSQL table at a single row: the quiescent-cycle result
+   (a dead-tuple ratio of 1.0 that the agent correctly dismisses) depends
+   on the table being nearly empty.
+3. Add both instances to `config/config.yaml` with the usual read-only
+   monitor user, and set `anthropic_model` to the model you want to test.
+4. Give the scenarios writer credentials (the monitor itself stays read-only):
+   ```bash
+   export SCENARIO_PG_USER=... SCENARIO_PG_PASSWORD=...
+   export SCENARIO_MYSQL_USER=... SCENARIO_MYSQL_PASSWORD=...
+   export ANTHROPIC_API_KEY=...        # Stage 2 only
+   ```
+5. Run:
+   ```bash
+   python scripts/run_paper_experiments.py --stage all \
+       --pg-instance <pg name in config> --mysql-instance <mysql name in config> \
+       --out results/
+   ```
+   `--stage 1` needs no API key. `--kill-threshold-seconds` (default 2)
+   lowers the kill-suggestion age so the termination-command path is
+   exercised within seconds, as in the paper; the production default is
+   600 s. `--settle-seconds` (default 3) is how long the blocking chain
+   accumulates wait before it is polled.
+
+### Output
+
+Everything is written to `results/` in machine-readable form:
+
+- `environment.json` -- OS, CPU, Python and package versions, database
+  versions, model name, and pre-filter settings.
+- `stage1_*_evidence.json`, `stage1_pg_blocking_email.txt` -- Stage 1 evidence
+  bundles and the rendered email.
+- `stage2_cycleN_*.json` -- per cycle: pre-filter snapshot, full evidence
+  bundle, the agent's complete message trace (every tool call and
+  result), the parsed verdict, and whether a notification was sent.
+- `stage2_cycleN_*_email.txt` -- the rendered notification, when one was sent
+  (captured instead of emailed).
+
+Zip `results/` to publish it as supplemental data.
+
+Stage 2 calls the Anthropic API, so LLM wording and tool-call sequences
+will vary from run to run; the deterministic evidence (query text,
+process ids, termination commands, InnoDB deadlock text) will not.
 
 ## Known limitations
 
