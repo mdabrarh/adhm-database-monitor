@@ -4,7 +4,7 @@ SQLite-backed history for two purposes:
 1. Baselines: every poll cycle (even quiet ones) records a handful of raw
    metrics per instance. This lets the agent ask "is this normal for this
    time of day?" instead of judging a number in isolation -- the whole
-   point of Section 4.4 in the design write-up. Old rows are pruned
+   point of the agentic reasoning core in the design write-up. Old rows are pruned
    automatically so the file doesn't grow forever.
 
 2. Decisions: every time the LLM actually renders a verdict (severity +

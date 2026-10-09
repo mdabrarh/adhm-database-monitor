@@ -2,7 +2,8 @@
 """
 Human-in-the-loop feedback CLI. Lets you mark a past agent verdict as a
 true or false positive, closing the audit-trail loop described in the
-architecture (Section 4.6 of the accompanying paper): every disagreement
+architecture (the human-in-the-loop guardrails in the accompanying
+paper): every disagreement
 between the agent and a human is recorded, not silently discarded.
 
 Usage:

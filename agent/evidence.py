@@ -3,7 +3,7 @@ Deterministic evidence gathering -- the ground truth attached to every
 notification email, independent of anything the LLM says.
 
 Why this exists as a separate step from the Claude/MCP reasoning call:
-the paper's guardrail design (Section 4.6) requires that every
+the paper's human-in-the-loop guardrail design requires that every
 notification include the underlying raw data so a human can verify the
 agent's reasoning, not just trust a natural-language summary. It also
 means anything precise and potentially dangerous if wrong -- specifically,
